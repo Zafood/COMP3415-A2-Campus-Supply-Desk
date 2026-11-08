@@ -1,4 +1,5 @@
-﻿"""Interactive terminal adapter; business rules remain in OrderService."""
+﻿
+"""Interactive terminal adapter; business rules remain in OrderService."""
 
 
 def money(cents):
@@ -7,7 +8,6 @@ def money(cents):
 
 def show_catalog(products):
     print("\nProduct ID       Name                     Price     Stock")
-
     for product in products:
         print(
             f"{product['product_id']:<16} "
@@ -28,7 +28,7 @@ def show_order(order):
         f"Fulfillment: {order['fulfillment']}"
     )
 
-    for line in order["items"]:
+    for line in order['items']:
         print(
             f"  {line['name']} x {line['quantity']}: "
             f"{money(line['line_total_cents'])}"
@@ -52,8 +52,8 @@ def read_request(service):
     )
 
     customer = (
-        input("Customer type [regular/student] (Enter = regular): ").strip()
-        or "regular"
+        input("Customer type [regular/student] (Enter = regular): ")
+        .strip() or "regular"
     )
 
     items = []
@@ -78,8 +78,9 @@ def read_request(service):
         })
 
     fulfillment = (
-        input("Fulfillment [pickup/delivery] (Enter = pickup): ").strip()
-        or "pickup"
+        input(
+            "Fulfillment [pickup/delivery/express] (Enter = pickup): "
+        ).strip() or "pickup"
     )
 
     return customer, items, fulfillment
@@ -91,6 +92,7 @@ def _handle_quote_or_order(service, choice):
     if choice == "2":
         show_order(service.quote(*request))
         print("Quote only: no stock reserved and no order created.")
+
     else:
         show_order(service.quote(*request))
 
@@ -112,7 +114,6 @@ def _show_order_history(service):
 
 def _find_order(service):
     order_id = input("Order ID: ").strip()
-
     show_order(service.get_order(order_id))
 
 

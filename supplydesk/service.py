@@ -4,7 +4,8 @@
 from supplydesk.storage import JsonStore
 
 
-# Business rule constants
+# Business-rule values are named so their purpose is clear and changes are
+# easier to make consistently.
 MIN_QUANTITY = 1
 MAX_QUANTITY = 99
 STUDENT_DISCOUNT_THRESHOLD_CENTS = 5000
@@ -13,6 +14,7 @@ PERCENTAGE_BASE = 100
 PERCENTAGE_ROUNDING_ADJUSTMENT = 50
 FREE_DELIVERY_THRESHOLD_CENTS = 10000
 DELIVERY_FEE_CENTS = 600
+EXPRESS_DELIVERY_FEE_CENTS = 1200
 
 
 class OrderService:
@@ -24,52 +26,36 @@ class OrderService:
 
     def _build_quote(self, state, customer_type, items, fulfillment):
         """Validate a request and calculate its quote without saving changes."""
-
         if customer_type not in ("regular", "student"):
             raise ValueError("Customer type must be regular or student.")
-
-        if fulfillment not in ("pickup", "delivery"):
+        if fulfillment not in ("pickup", "delivery", "express"):
             raise ValueError("Fulfillment must be pickup or delivery.")
-
         if not isinstance(items, list) or not items:
             raise ValueError("An order must contain at least one item.")
 
         lines = []
         subtotal = 0
-
         for item in items:
             if not isinstance(item, dict):
-                raise ValueError(
-                    "Each item must contain a product_id and quantity."
-                )
-
+                raise ValueError("Each item must contain a product_id and quantity.")
             product = None
-
             for candidate in state["catalog"]:
                 if candidate["product_id"] == item.get("product_id"):
                     product = candidate
                     break
-
             if product is None:
                 raise ValueError("Unknown product.")
 
             quantity = item.get("quantity")
-
             if (type(quantity) is not int
                     or quantity < MIN_QUANTITY
                     or quantity > MAX_QUANTITY):
-                raise ValueError(
-                    "Quantity must be an integer from 1 to 99."
-                )
-
+                raise ValueError("Quantity must be an integer from 1 to 99.")
             if quantity > product["stock"]:
-                raise ValueError(
-                    "Not enough stock for " + product["product_id"] + "."
-                )
+                raise ValueError("Not enough stock for " + product["product_id"] + ".")
 
             line_total = product["unit_price_cents"] * quantity
             subtotal += line_total
-
             lines.append({
                 "product_id": product["product_id"],
                 "name": product["name"],
@@ -79,17 +65,17 @@ class OrderService:
             })
 
         discount = 0
-
-        if (customer_type == "student"
-                and subtotal > STUDENT_DISCOUNT_THRESHOLD_CENTS):
+        if customer_type == "student" and subtotal > STUDENT_DISCOUNT_THRESHOLD_CENTS:
             discount = (
                 subtotal * STUDENT_DISCOUNT_PERCENT
                 + PERCENTAGE_ROUNDING_ADJUSTMENT
             ) // PERCENTAGE_BASE
 
         delivery = 0
-
-        if (fulfillment == "delivery"
+        if fulfillment == "express":
+            # Express delivery is always charged, regardless of merchandise total.
+            delivery = EXPRESS_DELIVERY_FEE_CENTS
+        elif (fulfillment == "delivery"
                 and subtotal - discount < FREE_DELIVERY_THRESHOLD_CENTS):
             delivery = DELIVERY_FEE_CENTS
 
@@ -105,18 +91,11 @@ class OrderService:
 
     def quote(self, customer_type, items, fulfillment="pickup"):
         state = self.store.load()
-
-        return self._build_quote(
-            state, customer_type, items, fulfillment
-        )
+        return self._build_quote(state, customer_type, items, fulfillment)
 
     def place_order(self, customer_type, items, fulfillment="pickup"):
         state = self.store.load()
-
-        quote = self._build_quote(
-            state, customer_type, items, fulfillment
-        )
-
+        quote = self._build_quote(state, customer_type, items, fulfillment)
         order = {
             "order_id": "ORD-" + str(state["next_order_number"]).zfill(4),
             "status": "placed",
@@ -128,17 +107,13 @@ class OrderService:
             "delivery_cents": quote["delivery_cents"],
             "total_cents": quote["total_cents"],
         }
-
         for line in quote["items"]:
             for product in state["catalog"]:
                 if product["product_id"] == line["product_id"]:
                     product["stock"] -= line["quantity"]
-
         state["next_order_number"] += 1
         state["orders"].append(order)
-
         self.store.save(state)
-
         return order
 
     def list_orders(self):
@@ -146,32 +121,24 @@ class OrderService:
 
     def get_order(self, order_id):
         state = self.store.load()
-
         for order in state["orders"]:
             if order["order_id"] == order_id:
                 return order
-
         raise ValueError("Unknown order: " + order_id)
 
     def cancel_order(self, order_id):
         state = self.store.load()
         order = None
-
         for candidate in state["orders"]:
             if candidate["order_id"] == order_id:
                 order = candidate
                 break
-
         if order is None:
             raise ValueError("Unknown order: " + order_id)
-
         for line in order["items"]:
             for product in state["catalog"]:
                 if product["product_id"] == line["product_id"]:
                     product["stock"] += line["quantity"]
-
         order["status"] = "cancelled"
-
         self.store.save(state)
-
         return order
